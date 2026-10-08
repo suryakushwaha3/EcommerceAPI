@@ -986,3 +986,58 @@ def delete_user(user_id):
 
     finally:
         connection.close()
+
+
+
+        # ============================================================
+# Get All Users
+# ============================================================
+
+def get_all_users():
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                user_id,
+                name,
+                username,
+                email,
+                phone_number,
+                profile_image,
+                date_of_birth,
+                gender,
+                is_email_verified,
+                is_phone_verified,
+                account_status,
+                is_admin,
+                is_seller,
+                last_login_at,
+                created_at,
+                updated_at
+            FROM users
+            WHERE deleted_at IS NULL
+            ORDER BY created_at DESC
+            """
+        )
+
+        users = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(users),
+            "users": [dict(user) for user in users]
+        }
+
+    except Exception as error:
+
+        return {
+            "success": False,
+            "message": "Failed to get users",
+            "error": str(error)
+        }
+
+    finally:
+        connection.close()

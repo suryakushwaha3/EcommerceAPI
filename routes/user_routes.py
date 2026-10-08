@@ -9,6 +9,7 @@ from operations.user_operation import (
     change_password,
     create_password_reset_token,
     reset_password,
+    get_all_users, 
     verify_email,
     update_user_status,
     delete_user
@@ -383,5 +384,27 @@ def user_routes(app):
             return jsonify({
                 "success": False,
                 "message": "Failed to delete user",
+                "error": str(error)
+            }), 500
+
+            # ============================================================
+    # GET ALL USERS
+    # GET /api/users
+    # ============================================================
+
+    @app.route("/api/users", methods=["GET"])
+    def get_all_users_route():
+        try:
+            result = get_all_users()
+
+            if not result.get("success"):
+                return jsonify(result), 500
+
+            return jsonify(result), 200
+
+        except Exception as error:
+            return jsonify({
+                "success": False,
+                "message": "Failed to fetch users",
                 "error": str(error)
             }), 500
