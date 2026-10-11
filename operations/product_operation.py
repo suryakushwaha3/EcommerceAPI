@@ -17,6 +17,54 @@ def _generate_product_id():
 
 
 # ============================================================
+# Attach Product Images
+# ============================================================
+
+def _attach_product_images(cursor, product):
+    """
+    Attach maximum 4 active images to a product.
+    Primary images appear first.
+    Existing product response structure is preserved.
+    """
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM product_images
+        WHERE product_id = ?
+          AND deleted_at IS NULL
+          AND status = 'active'
+        ORDER BY
+            is_primary DESC,
+            is_thumbnail DESC,
+            sort_order ASC,
+            id ASC
+        LIMIT 4
+        """,
+        (product["product_id"],)
+    )
+
+    images = [
+        dict(row)
+        for row in cursor.fetchall()
+    ]
+
+    product["images"] = images
+
+    # Main product image
+    product["primary_image"] = next(
+        (
+            image.get("image_url")
+            for image in images
+            if image.get("is_primary")
+        ),
+        images[0].get("image_url") if images else None
+    )
+
+    return product
+
+
+# ============================================================
 # Create Product
 # ============================================================
 
@@ -215,22 +263,24 @@ def get_product_by_id(product_id):
             SELECT *
             FROM products
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
             (product_id,)
         )
 
-        product = cursor.fetchone()
+        row = cursor.fetchone()
 
-        if not product:
+        if not row:
             return {
                 "success": False,
                 "message": "Product not found"
             }
 
+        product = _attach_product_images(cursor, dict(row))
+
         return {
             "success": True,
-            "product": dict(product)
+            "product": product
         }
 
     finally:
@@ -251,22 +301,24 @@ def get_product_by_sku(sku):
             SELECT *
             FROM products
             WHERE sku = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
             (sku.strip(),)
         )
 
-        product = cursor.fetchone()
+        row = cursor.fetchone()
 
-        if not product:
+        if not row:
             return {
                 "success": False,
                 "message": "Product not found"
             }
 
+        product = _attach_product_images(cursor, dict(row))
+
         return {
             "success": True,
-            "product": dict(product)
+            "product": product
         }
 
     finally:
@@ -287,22 +339,24 @@ def get_product_by_slug(slug):
             SELECT *
             FROM products
             WHERE slug = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
             (slug.strip().lower(),)
         )
 
-        product = cursor.fetchone()
+        row = cursor.fetchone()
 
-        if not product:
+        if not row:
             return {
                 "success": False,
                 "message": "Product not found"
             }
 
+        product = _attach_product_images(cursor, dict(row))
+
         return {
             "success": True,
-            "product": dict(product)
+            "product": product
         }
 
     finally:
@@ -349,7 +403,6 @@ def update_product(product_id, **fields):
     values = []
 
     for field, value in fields.items():
-
         if field not in allowed_fields:
             continue
 
@@ -359,8 +412,11 @@ def update_product(product_id, **fields):
         if field == "product_name":
             value = value.strip()
 
-        if field in ("slug", "sku"):
+        if field == "slug":
             value = value.strip().lower()
+
+        if field == "sku":
+            value = value.strip()
 
         update_fields.append(f"{field} = ?")
         values.append(value)
@@ -380,7 +436,7 @@ def update_product(product_id, **fields):
             SELECT id
             FROM products
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
             (product_id,)
         )
@@ -397,12 +453,9 @@ def update_product(product_id, **fields):
                 SELECT id
                 FROM products
                 WHERE sku = ?
-                AND product_id != ?
+                  AND product_id != ?
                 """,
-                (
-                    fields["sku"],
-                    product_id
-                )
+                (fields["sku"], product_id)
             )
 
             if cursor.fetchone():
@@ -417,12 +470,9 @@ def update_product(product_id, **fields):
                 SELECT id
                 FROM products
                 WHERE slug = ?
-                AND product_id != ?
+                  AND product_id != ?
                 """,
-                (
-                    fields["slug"],
-                    product_id
-                )
+                (fields["slug"], product_id)
             )
 
             if cursor.fetchone():
@@ -437,12 +487,9 @@ def update_product(product_id, **fields):
                 SELECT id
                 FROM products
                 WHERE barcode = ?
-                AND product_id != ?
+                  AND product_id != ?
                 """,
-                (
-                    fields["barcode"],
-                    product_id
-                )
+                (fields["barcode"], product_id)
             )
 
             if cursor.fetchone():
@@ -453,18 +500,16 @@ def update_product(product_id, **fields):
 
         update_fields.append("updated_at = ?")
         values.append(_current_time())
-
         values.append(product_id)
 
         query = f"""
             UPDATE products
             SET {", ".join(update_fields)}
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
         """
 
         cursor.execute(query, values)
-
         connection.commit()
 
         return {
@@ -503,13 +548,9 @@ def delete_product(product_id):
                 deleted_at = ?,
                 updated_at = ?
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
-            (
-                now,
-                now,
-                product_id
-            )
+            (now, now, product_id)
         )
 
         if cursor.rowcount == 0:
@@ -563,7 +604,6 @@ def update_product_status(product_id, status):
 
     try:
         now = _current_time()
-
         deleted_at = now if status == "deleted" else None
 
         cursor.execute(
@@ -573,14 +613,9 @@ def update_product_status(product_id, status):
                 deleted_at = ?,
                 updated_at = ?
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
-            (
-                status,
-                deleted_at,
-                now,
-                product_id
-            )
+            (status, deleted_at, now, product_id)
         )
 
         if cursor.rowcount == 0:
@@ -639,13 +674,9 @@ def update_stock_status(product_id, stock_status):
             SET stock_status = ?,
                 updated_at = ?
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
-            (
-                stock_status,
-                _current_time(),
-                product_id
-            )
+            (stock_status, _current_time(), product_id)
         )
 
         if cursor.rowcount == 0:
@@ -759,15 +790,12 @@ def search_products(
             LIMIT ? OFFSET ?
         """
 
-        params.extend([
-            limit,
-            offset
-        ])
+        params.extend([limit, offset])
 
         cursor.execute(query, params)
 
         products = [
-            dict(row)
+            _attach_product_images(cursor, dict(row))
             for row in cursor.fetchall()
         ]
 
@@ -796,12 +824,9 @@ def increment_product_view(product_id):
             SET view_count = view_count + 1,
                 updated_at = ?
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
-            (
-                _current_time(),
-                product_id
-            )
+            (_current_time(), product_id)
         )
 
         connection.commit()
@@ -846,10 +871,7 @@ def update_wishlist_count(product_id, increment=True):
 
         cursor.execute(
             query,
-            (
-                _current_time(),
-                product_id
-            )
+            (_current_time(), product_id)
         )
 
         connection.commit()
@@ -894,10 +916,7 @@ def update_cart_count(product_id, increment=True):
 
         cursor.execute(
             query,
-            (
-                _current_time(),
-                product_id
-            )
+            (_current_time(), product_id)
         )
 
         connection.commit()
@@ -926,13 +945,9 @@ def increment_purchase_count(product_id, quantity=1):
             SET purchase_count = purchase_count + ?,
                 updated_at = ?
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
-            (
-                quantity,
-                _current_time(),
-                product_id
-            )
+            (quantity, _current_time(), product_id)
         )
 
         connection.commit()
@@ -960,8 +975,8 @@ def get_featured_products(limit=20):
             SELECT *
             FROM products
             WHERE is_featured = 1
-            AND status = 'active'
-            AND deleted_at IS NULL
+              AND status = 'active'
+              AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT ?
             """,
@@ -969,7 +984,7 @@ def get_featured_products(limit=20):
         )
 
         products = [
-            dict(row)
+            _attach_product_images(cursor, dict(row))
             for row in cursor.fetchall()
         ]
 
@@ -996,8 +1011,8 @@ def get_bestseller_products(limit=20):
             SELECT *
             FROM products
             WHERE is_bestseller = 1
-            AND status = 'active'
-            AND deleted_at IS NULL
+              AND status = 'active'
+              AND deleted_at IS NULL
             ORDER BY purchase_count DESC
             LIMIT ?
             """,
@@ -1005,7 +1020,7 @@ def get_bestseller_products(limit=20):
         )
 
         products = [
-            dict(row)
+            _attach_product_images(cursor, dict(row))
             for row in cursor.fetchall()
         ]
 
@@ -1032,8 +1047,8 @@ def get_trending_products(limit=20):
             SELECT *
             FROM products
             WHERE is_trending = 1
-            AND status = 'active'
-            AND deleted_at IS NULL
+              AND status = 'active'
+              AND deleted_at IS NULL
             ORDER BY view_count DESC
             LIMIT ?
             """,
@@ -1041,7 +1056,7 @@ def get_trending_products(limit=20):
         )
 
         products = [
-            dict(row)
+            _attach_product_images(cursor, dict(row))
             for row in cursor.fetchall()
         ]
 
@@ -1068,8 +1083,8 @@ def get_new_arrivals(limit=20):
             SELECT *
             FROM products
             WHERE is_new_arrival = 1
-            AND status = 'active'
-            AND deleted_at IS NULL
+              AND status = 'active'
+              AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT ?
             """,
@@ -1077,7 +1092,7 @@ def get_new_arrivals(limit=20):
         )
 
         products = [
-            dict(row)
+            _attach_product_images(cursor, dict(row))
             for row in cursor.fetchall()
         ]
 
@@ -1089,7 +1104,8 @@ def get_new_arrivals(limit=20):
     finally:
         connection.close()
 
-        # ============================================================
+
+# ============================================================
 # Get Complete Product Details
 # ============================================================
 
@@ -1107,7 +1123,7 @@ def get_product_details(product_id):
             SELECT *
             FROM products
             WHERE product_id = ?
-            AND deleted_at IS NULL
+              AND deleted_at IS NULL
             """,
             (product_id,)
         )
@@ -1123,28 +1139,10 @@ def get_product_details(product_id):
         product = dict(product_row)
 
         # ----------------------------------------------------
-        # Product Images
+        # Product Images (Maximum 4)
         # ----------------------------------------------------
 
-        cursor.execute(
-            """
-            SELECT *
-            FROM product_images
-            WHERE product_id = ?
-            AND deleted_at IS NULL
-            AND status = 'active'
-            ORDER BY is_primary DESC,
-                     is_thumbnail DESC,
-                     sort_order ASC,
-                     id ASC
-            """,
-            (product_id,)
-        )
-
-        images = [
-            dict(row)
-            for row in cursor.fetchall()
-        ]
+        product = _attach_product_images(cursor, product)
 
         # ----------------------------------------------------
         # Product Highlights
@@ -1155,11 +1153,12 @@ def get_product_details(product_id):
             SELECT *
             FROM product_highlights
             WHERE product_id = ?
-            AND deleted_at IS NULL
-            AND status = 'active'
-            ORDER BY is_featured DESC,
-                     display_order ASC,
-                     id ASC
+              AND deleted_at IS NULL
+              AND status = 'active'
+            ORDER BY
+                is_featured DESC,
+                display_order ASC,
+                id ASC
             """,
             (product_id,)
         )
@@ -1178,10 +1177,9 @@ def get_product_details(product_id):
             SELECT *
             FROM product_specifications
             WHERE product_id = ?
-            AND deleted_at IS NULL
-            AND status = 'active'
-            ORDER BY display_order ASC,
-                     id ASC
+              AND deleted_at IS NULL
+              AND status = 'active'
+            ORDER BY display_order ASC, id ASC
             """,
             (product_id,)
         )
@@ -1200,8 +1198,8 @@ def get_product_details(product_id):
             SELECT *
             FROM product_variants
             WHERE product_id = ?
-            AND deleted_at IS NULL
-            AND status = 'active'
+              AND deleted_at IS NULL
+              AND status = 'active'
             ORDER BY id ASC
             """,
             (product_id,)
@@ -1221,21 +1219,19 @@ def get_product_details(product_id):
             SELECT *
             FROM ratings
             WHERE product_id = ?
-            AND status = 'active'
+              AND status = 'active'
             LIMIT 1
             """,
             (product_id,)
         )
 
         rating_row = cursor.fetchone()
-
         rating = dict(rating_row) if rating_row else None
 
         # ----------------------------------------------------
         # Final Response
         # ----------------------------------------------------
 
-        product["images"] = images
         product["highlights"] = highlights
         product["specifications"] = specifications
         product["variants"] = variants
@@ -1255,8 +1251,4 @@ def get_product_details(product_id):
 
     finally:
         connection.close()
-
-
-
-
-
+ 

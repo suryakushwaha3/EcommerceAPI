@@ -23,11 +23,7 @@ def _hash_password(password):
         310000
     )
 
-    return (
-        salt.hex()
-        + ":"
-        + password_hash.hex()
-    )
+    return salt.hex() + ":" + password_hash.hex()
 
 
 def _verify_password(password, stored_hash):
@@ -79,6 +75,10 @@ def create_user(
         if username:
             username = username.strip().lower()
 
+        # ----------------------------------------------------
+        # Check Email
+        # ----------------------------------------------------
+
         cursor.execute(
             """
             SELECT id
@@ -93,6 +93,10 @@ def create_user(
                 "success": False,
                 "message": "Email already registered"
             }
+
+        # ----------------------------------------------------
+        # Check Phone Number
+        # ----------------------------------------------------
 
         if phone_number:
             cursor.execute(
@@ -110,6 +114,10 @@ def create_user(
                     "message": "Phone number already registered"
                 }
 
+        # ----------------------------------------------------
+        # Check Username
+        # ----------------------------------------------------
+
         if username:
             cursor.execute(
                 """
@@ -125,6 +133,10 @@ def create_user(
                     "success": False,
                     "message": "Username already exists"
                 }
+
+        # ----------------------------------------------------
+        # Create User
+        # ----------------------------------------------------
 
         now = _current_time()
 
@@ -153,7 +165,10 @@ def create_user(
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', 0, 0, 0, ?, ?)
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                0, 0, 'active', 0, 0, 0, ?, ?
+            )
             """,
             (
                 user_id,
@@ -222,6 +237,10 @@ def login_user(email, password, login_ip=None):
 
         user = dict(user)
 
+        # ----------------------------------------------------
+        # Account Status
+        # ----------------------------------------------------
+
         if user["account_status"] in (
             "blocked",
             "suspended",
@@ -232,11 +251,19 @@ def login_user(email, password, login_ip=None):
                 "message": "Account is not active"
             }
 
+        # ----------------------------------------------------
+        # Login Attempts
+        # ----------------------------------------------------
+
         if user["login_attempts"] >= 5:
             return {
                 "success": False,
                 "message": "Too many login attempts"
             }
+
+        # ----------------------------------------------------
+        # Verify Password
+        # ----------------------------------------------------
 
         if not _verify_password(
             password,
@@ -261,6 +288,10 @@ def login_user(email, password, login_ip=None):
                 "success": False,
                 "message": "Invalid email or password"
             }
+
+        # ----------------------------------------------------
+        # Successful Login
+        # ----------------------------------------------------
 
         now = _current_time()
 
@@ -448,6 +479,10 @@ def update_user_profile(
                 "message": "User not found"
             }
 
+        # ----------------------------------------------------
+        # Check Username
+        # ----------------------------------------------------
+
         if username:
             username = username.strip().lower()
 
@@ -470,6 +505,10 @@ def update_user_profile(
                     "message": "Username already exists"
                 }
 
+        # ----------------------------------------------------
+        # Check Phone Number
+        # ----------------------------------------------------
+
         if phone_number:
             cursor.execute(
                 """
@@ -489,6 +528,10 @@ def update_user_profile(
                     "success": False,
                     "message": "Phone number already registered"
                 }
+
+        # ----------------------------------------------------
+        # Prepare Update
+        # ----------------------------------------------------
 
         update_fields = []
         values = []
@@ -668,9 +711,10 @@ def create_password_reset_token(email):
 
         token = secrets.token_urlsafe(48)
 
-        expiry = datetime.now(
-            timezone.utc
-        ).timestamp() + 1800
+        expiry = (
+            datetime.now(timezone.utc).timestamp()
+            + 1800
+        )
 
         expiry_time = datetime.fromtimestamp(
             expiry,
@@ -727,7 +771,9 @@ def reset_password(token, new_password):
 
         cursor.execute(
             """
-            SELECT user_id, password_reset_expiry
+            SELECT
+                user_id,
+                password_reset_expiry
             FROM users
             WHERE password_reset_token = ?
             AND deleted_at IS NULL
@@ -809,7 +855,9 @@ def verify_email(token):
 
         cursor.execute(
             """
-            SELECT user_id, email_verification_expiry
+            SELECT
+                user_id,
+                email_verification_expiry
             FROM users
             WHERE email_verification_token = ?
             AND deleted_at IS NULL
@@ -988,9 +1036,9 @@ def delete_user(user_id):
         connection.close()
 
 
-
-        # ============================================================
+# ============================================================
 # Get All Users
+# GET /api/users
 # ============================================================
 
 def get_all_users():
@@ -1032,7 +1080,6 @@ def get_all_users():
         }
 
     except Exception as error:
-
         return {
             "success": False,
             "message": "Failed to get users",

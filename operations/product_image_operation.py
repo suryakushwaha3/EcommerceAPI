@@ -1107,3 +1107,144 @@ def update_product_image_status(image_id, status):
 
     finally:
         connection.close()
+
+
+
+def save_product_image_with_cursor(
+    cursor,
+    product_id,
+    image_file,
+    image_type="product",
+    alt_text=None,
+    title=None,
+    is_primary=1,
+    is_thumbnail=1,
+    sort_order=0
+):
+    """
+    Save product image using an existing database cursor.
+    Does not commit or close the database connection.
+    """
+
+    if image_file is None or not image_file.filename:
+        raise ValueError("Image file is required.")
+
+    filename = image_file.filename
+    mime_type = image_file.mimetype
+
+    if not _is_allowed_image(filename, mime_type):
+        raise ValueError(
+            "Invalid image format. Only JPG, JPEG, PNG and WEBP are allowed."
+        )
+
+    image_file.seek(0, os.SEEK_END)
+    file_size = image_file.tell()
+    image_file.seek(0)
+
+    if file_size <= 0:
+        raise ValueError("Image file is empty.")
+
+    if file_size > MAX_IMAGE_SIZE:
+        raise ValueError("Image size must not exceed 10 MB.")
+
+    allowed_types = {
+        "product", "thumbnail", "front", "back", "side",
+        "top", "bottom", "detail", "packaging", "lifestyle", "banner"
+    }
+
+    if image_type not in allowed_types:
+        raise ValueError("Invalid image type.")
+
+    extension = _get_file_extension(filename)
+    saved_filename = _generate_image_filename(extension)
+
+    _ensure_product_upload_directory()
+
+    saved_file_path = os.path.join(
+        PRODUCT_UPLOAD_DIR,
+        saved_filename
+    )
+
+    image_file.save(saved_file_path)
+
+    try:
+        image_id = _generate_image_id()
+        image_url = _get_image_url(saved_filename)
+        current_time = _current_time()
+
+        if is_primary:
+            cursor.execute("""
+                UPDATE product_images
+                SET is_primary = 0,
+                    updated_at = ?
+                WHERE product_id = ?
+                  AND status = 'active'
+            """, (current_time, product_id))
+
+        if is_thumbnail:
+            cursor.execute("""
+                UPDATE product_images
+                SET is_thumbnail = 0,
+                    updated_at = ?
+                WHERE product_id = ?
+                  AND status = 'active'
+            """, (current_time, product_id))
+
+        cursor.execute("""
+            INSERT INTO product_images (
+                image_id,
+                product_id,
+                image_url,
+                image_type,
+                alt_text,
+                title,
+                is_primary,
+                is_thumbnail,
+                sort_order,
+                width,
+                height,
+                file_size,
+                mime_type,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            image_id,
+            product_id,
+            image_url,
+            image_type,
+            alt_text,
+            title,
+            int(bool(is_primary)),
+            int(bool(is_thumbnail)),
+            int(sort_order),
+            None,
+            None,
+            file_size,
+            mime_type,
+            "active",
+            current_time,
+            current_time
+        ))
+
+        return {
+            "image_id": image_id,
+            "product_id": product_id,
+            "image_url": image_url,
+            "image_type": image_type,
+            "is_primary": int(bool(is_primary)),
+            "is_thumbnail": int(bool(is_thumbnail)),
+            "sort_order": int(sort_order),
+            "file_size": file_size,
+            "mime_type": mime_type
+        }, saved_file_path
+
+    except Exception:
+        if os.path.exists(saved_file_path):
+            try:
+                os.remove(saved_file_path)
+            except OSError:
+                pass
+        raise
